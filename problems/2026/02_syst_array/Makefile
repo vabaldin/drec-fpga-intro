@@ -22,16 +22,21 @@ vsim: $(TB_LIST) $(RTL_LIST)
 	vsim work.$(TOP_TB_NAME) $(VSIM_FLAGS) $(VSIM_LIBS)
 
 verilator: $(TB_LIST) $(RTL_LIST)
-	verilator --binary -Wno-fatal $^
-	./obj_dir/V$(TOP_TB_NAME)
+	verilator --binary --trace --top-module $(TOP_TB_NAME) $^
+	./obj_dir/V$(TOP_TB_NAME) +waves
 
-lint: $(RTL_LIST) 
-	verilator --lint-only $^
+iverilog: $(TB_LIST) $(RTL_LIST)
+	mkdir -p obj_dir
+	iverilog -g2012 -Wall -s $(TOP_TB_NAME) -o obj_dir/$(TOP_TB_NAME).vvp $^
+	vvp obj_dir/$(TOP_TB_NAME).vvp +waves
+
+lint: $(RTL_LIST)
+	verilator --lint-only --top-module sa_top $^
 
 clean:
-	rm -rf transcript work obj_dir
+	rm -rf transcript work obj_dir $(VCD_FILE)
 
 waves: $(VCD_FILE)
 	gtkwave $(VCD_FILE) &
 
-.PHONY: clean verilator waves vsim
+.PHONY: clean iverilog lint verilator waves vsim

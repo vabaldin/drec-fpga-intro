@@ -1,0 +1,17 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    fragment@0 {
+        target-path = "/";
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <1>;
+
+            systolic-array@43c00000 {
+                compatible = "drec,systolic-array";
+                reg = <0x43c00000 0x10000>;
+            };
+        };
+    };
+};

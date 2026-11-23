@@ -1,0 +1,16 @@
+#!/bin/busybox sh
+
+run_test() {
+    /bin/busybox mount -t devtmpfs devtmpfs /dev || return 1
+    /bin/busybox devmem 0x09008000 32 7 || return 1
+    /bin/busybox devmem 0x09008004 32 9 || return 1
+    result=$(/bin/busybox devmem 0x09008008 32) || return 1
+    [ "$((result))" -eq 63 ]
+}
+
+if run_test; then
+    echo 'PASS Linux mul-dev'
+else
+    echo 'FAIL Linux mul-dev'
+fi
+exec /bin/busybox poweroff -f

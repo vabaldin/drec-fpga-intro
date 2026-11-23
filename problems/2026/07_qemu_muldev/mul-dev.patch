@@ -31,7 +31,7 @@
 @@ -2093,6 +2094,18 @@
      }
  }
- 
+
 +static void create_mul_dev(VirtMachineState *vms)
 +{
 +    const MemMapEntry *map = &vms->memmap[VIRT_MUL_DEV];
@@ -48,12 +48,12 @@
  {
      VirtMachineState *vms = VIRT_MACHINE(machine);
 @@ -2399,6 +2412,7 @@
- 
+
      vms->highmem_ecam &= (!firmware_loaded || aarch64);
- 
+
 +    create_mul_dev(vms);
      create_rtc(vms);
- 
+
      create_pcie(vms);
 --- /dev/null
 +++ b/hw/arm/mul-dev.c

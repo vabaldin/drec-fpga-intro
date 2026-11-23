@@ -1,0 +1,152 @@
+--- a/include/hw/arm/virt.h
++++ b/include/hw/arm/virt.h
+@@ -63,6 +63,7 @@
+     VIRT_GIC_REDIST,
+     VIRT_SMMU,
+     VIRT_UART0,
++    VIRT_MUL_DEV,
+     VIRT_MMIO,
+     VIRT_RTC,
+     VIRT_FW_CFG,
+--- a/hw/arm/meson.build
++++ b/hw/arm/meson.build
+@@ -1,6 +1,6 @@
+ arm_ss = ss.source_set()
+ arm_ss.add(files('boot.c'))
+-arm_ss.add(when: 'CONFIG_ARM_VIRT', if_true: files('virt.c'))
++arm_ss.add(when: 'CONFIG_ARM_VIRT', if_true: files('virt.c', 'mul-dev.c'))
+ arm_ss.add(when: 'CONFIG_ACPI', if_true: files('virt-acpi-build.c'))
+ arm_ss.add(when: 'CONFIG_DIGIC', if_true: files('digic_boards.c'))
+ arm_ss.add(when: 'CONFIG_EMCRAFT_SF2', if_true: files('msf2-som.c'))
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -171,6 +171,7 @@
+     /* This redistributor space allows up to 2*64kB*123 CPUs */
+     [VIRT_GIC_REDIST] =         { 0x080A0000, 0x00F60000 },
+     [VIRT_UART0] =              { 0x09000000, 0x00001000 },
++    [VIRT_MUL_DEV] =            { 0x09008000, 0x00001000 },
+     [VIRT_RTC] =                { 0x09010000, 0x00001000 },
+     [VIRT_FW_CFG] =             { 0x09020000, 0x00000018 },
+     [VIRT_GPIO] =               { 0x09030000, 0x00001000 },
+@@ -2093,6 +2094,18 @@
+     }
+ }
+ 
++static void create_mul_dev(VirtMachineState *vms)
++{
++    const MemMapEntry *map = &vms->memmap[VIRT_MUL_DEV];
++    g_autofree char *node = g_strdup_printf("/mul-dev@%" PRIx64, map->base);
++    void *fdt = MACHINE(vms)->fdt;
++
++    sysbus_create_simple("mul-dev", map->base, NULL);
++    qemu_fdt_add_subnode(fdt, node);
++    qemu_fdt_setprop_string(fdt, node, "compatible", "drec,mul-dev");
++    qemu_fdt_setprop_sized_cells(fdt, node, "reg", 2, map->base, 2, map->size);
++}
++
+ static void machvirt_init(MachineState *machine)
+ {
+     VirtMachineState *vms = VIRT_MACHINE(machine);
+@@ -2399,6 +2412,7 @@
+ 
+     vms->highmem_ecam &= (!firmware_loaded || aarch64);
+ 
++    create_mul_dev(vms);
+     create_rtc(vms);
+ 
+     create_pcie(vms);
+--- /dev/null
++++ b/hw/arm/mul-dev.c
+@@ -0,0 +1,92 @@
++#include "qemu/osdep.h"
++#include "hw/sysbus.h"
++#include "migration/vmstate.h"
++
++#define TYPE_MUL_DEV "mul-dev"
++OBJECT_DECLARE_SIMPLE_TYPE(MulDev, MUL_DEV)
++
++struct MulDev {
++    SysBusDevice parent_obj;
++    MemoryRegion mmio;
++    uint32_t a;
++    uint32_t b;
++};
++
++static uint64_t mul_read(void *opaque, hwaddr addr, unsigned size)
++{
++    MulDev *s = opaque;
++
++    switch (addr) {
++    case 0: return s->a;
++    case 4: return s->b;
++    case 8: return (uint32_t)(s->a * s->b);
++    default: return 0;
++    }
++}
++
++static void mul_write(void *opaque, hwaddr addr, uint64_t value, unsigned size)
++{
++    MulDev *s = opaque;
++
++    switch (addr) {
++    case 0: s->a = value; break;
++    case 4: s->b = value; break;
++    }
++}
++
++static const MemoryRegionOps mul_ops = {
++    .read = mul_read,
++    .write = mul_write,
++    .endianness = DEVICE_LITTLE_ENDIAN,
++    .valid = { .min_access_size = 4, .max_access_size = 4 },
++    .impl = { .min_access_size = 4, .max_access_size = 4 },
++};
++
++static void mul_init(Object *obj)
++{
++    MulDev *s = MUL_DEV(obj);
++
++    memory_region_init_io(&s->mmio, obj, &mul_ops, s, TYPE_MUL_DEV, 0x1000);
++    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
++}
++
++static void mul_reset(DeviceState *dev)
++{
++    MulDev *s = MUL_DEV(dev);
++
++    s->a = 0;
++    s->b = 0;
++}
++
++static const VMStateDescription mul_vmstate = {
++    .name = TYPE_MUL_DEV,
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .fields = (const VMStateField[]) {
++        VMSTATE_UINT32(a, MulDev),
++        VMSTATE_UINT32(b, MulDev),
++        VMSTATE_END_OF_LIST()
++    },
++};
++
++static void mul_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++
++    device_class_set_legacy_reset(dc, mul_reset);
++    dc->vmsd = &mul_vmstate;
++}
++
++static const TypeInfo mul_info = {
++    .name = TYPE_MUL_DEV,
++    .parent = TYPE_SYS_BUS_DEVICE,
++    .instance_size = sizeof(MulDev),
++    .instance_init = mul_init,
++    .class_init = mul_class_init,
++};
++
++static void mul_register(void)
++{
++    type_register_static(&mul_info);
++}
++type_init(mul_register)
